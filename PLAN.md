@@ -57,7 +57,7 @@ Think of it as PGP for identity: you publish your public verification, keep your
 │           │   docs  │   only)     │  docs   │  state registry) │
 └──────────┘         └─────────────┘         └──────────────────┘
                             │
-                     docs verified ✓
+                     docs verified [Y]
                      generate keypair
                      discard raw docs
                             │
@@ -71,7 +71,7 @@ Think of it as PGP for identity: you publish your public verification, keep your
 
 1. Citizen submits identity documents via secure session (TLS + ephemeral encryption)
 2. verify.id forwards documents to the **Document Verification Service (DVS)** or equivalent government API — in-memory only
-3. Government authority responds: ✓ valid / ✗ invalid
+3. Government authority responds: valid / invalid
 4. On success:
    - An **asymmetric keypair** is generated
    - A **proxy certificate** is created, signed by verify.id's authority key
@@ -88,13 +88,13 @@ Think of it as PGP for identity: you publish your public verification, keep your
 │  Citizen  │───────────────▶│  Uber /   │──────────────────▶│  verify.id  │
 │           │                │  Bar /    │                    │  public API │
 │           │                │  Service  │◀───────────────────│             │
-└──────────┘                └──────────┘   ✓ valid + attrs   └─────────────┘
+└──────────┘                └──────────┘   valid + attrs     └─────────────┘
 ```
 
 1. Citizen presents their **proxy certificate** to a third party (Uber, a bar, a rental agency)
 2. Third party sends the **public verification ID** to verify.id's public API
 3. verify.id responds with:
-   - ✓/✗ certificate validity
+   - valid/invalid certificate status
    - Confirmed attributes the citizen chose to expose (e.g., "age ≥ 18": true)
    - **Nothing else.** No name, no address, no license number.
 4. Third party gets exactly what they need — nothing more
@@ -112,45 +112,15 @@ Think of it as PGP for identity: you publish your public verification, keep your
 
 ### 5.1 Data at Rest (Minimal)
 
-| Data | Stored? | Format | Notes |
-|------|---------|--------|-------|
-| Raw identity documents | ❌ NEVER | — | Only exists in-memory during verification ceremony |
-| User PII (name, DOB, address) | ❌ NEVER | — | Extracted as attributes, raw data discarded |
-| Public Verification ID | ✅ | Encrypted blob | The public half — allows third parties to validate |
-| Certificate metadata | ✅ | Encrypted | Attribute attestations, expiry, revocation status |
-| Private key | ❌ NEVER | — | Only the citizen holds this |
-| verify.id signing key | ✅ | HSM-backed | Used to sign certificates; stored in hardware security module |
+| Data | Stored | Notes |
+|------|--------|-------|
+| Raw identity documents | No | In-memory only during verification ceremony, then purged |
+| User PII (name, DOB, address) | No | Extracted as attributes, raw data discarded |
+| Public Verification ID | Yes | Encrypted at rest — allows third parties to validate |
+| Certificate metadata | Yes | Encrypted — attribute attestations, expiry, revocation status |
+| Private key | No | Only the citizen holds this |
+| verify.id signing key | Yes | HSM-backed — never leaves hardware security module |
 
-### 5.2 System Components
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        verify.id Platform                        │
-│                                                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-│  │  Enrollment   │  │  Verification│  │  Certificate Manager   │ │
-│  │  Service      │  │  API (Public)│  │  (revoke/renew/expire) │ │
-│  │              │  │              │  │                        │ │
-│  │  - accepts   │  │  - receives  │  │  - TTL enforcement     │ │
-│  │    docs      │  │    pub ID    │  │  - revocation list     │ │
-│  │  - calls DVS │  │  - returns   │  │  - re-enrollment flow  │ │
-│  │  - generates │  │    attrs +   │  │                        │ │
-│  │    keypair   │  │    validity  │  │                        │ │
-│  │  - issues    │  │              │  │                        │ │
-│  │    cert      │  │              │  │                        │ │
-│  └──────────────┘  └──────────────┘  └────────────────────────┘ │
-│                                                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-│  │  Crypto       │  │  Encrypted   │  │  Audit / Transparency  │ │
-│  │  Engine       │  │  Store       │  │  Log                   │ │
-│  │              │  │              │  │                        │ │
-│  │  - keypair   │  │  - pub IDs   │  │  - all operations      │ │
-│  │    generation│  │  - cert meta │  │    logged (no PII)     │ │
-│  │  - signing   │  │  - NO PII    │  │  - publicly auditable  │ │
-│  │  - HSM       │  │              │  │                        │ │
-│  └──────────────┘  └──────────────┘  └────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -190,10 +160,10 @@ Key design decisions:
 
 | Traditional ID Service | verify.id |
 |----------------------|-----------|
-| Names, DOBs, addresses | ❌ Not stored |
-| License/passport scans | ❌ Not stored |
-| Phone numbers, emails | ❌ Not stored (or minimal, hashed) |
-| Biometric data | ❌ Not stored |
+| Names, DOBs, addresses | Not stored |
+| License/passport scans | Not stored |
+| Phone numbers, emails | Not stored (or minimal, hashed) |
+| Biometric data | Not stored |
 | **Everything needed for identity theft** | **Encrypted public verification IDs + attribute booleans** |
 
 An attacker breaching verify.id gets: a database of encrypted blobs that say things like "this anonymous ID has a valid license" — **useless for identity theft**.
@@ -259,7 +229,7 @@ The citizen generates a **scoped certificate** for each use case — a subset of
 1. Third party says "verify your age" or "verify your identity"
 2. Open verify.id → select which attributes to share → generate scoped certificate
 3. Present certificate (QR code, NFC tap, or digital link)
-4. Third party scans/checks → gets a ✓ and the attributes you chose → done
+4. Third party scans/checks → gets a yes and the attributes you chose → done
 5. No license photo. No home address. No data harvesting.
 
 ### Recovery
@@ -284,24 +254,11 @@ Citizen ──▶ verify.id ──▶ DVS (government) ──▶ response ──
 - verify.id becomes a **DVS Access Provider** (already a defined role in AU identity infrastructure)
 - We call DVS APIs to validate documents — we don't make trust decisions ourselves
 - This means verify.id inherits government-grade verification without storing anything
+- Free for citizens — funded as public infrastructure. Third parties pay a nominal per-verification API fee
 
 ---
 
-## 12. Revenue & Sustainability Model
-
-| Phase | Funding | Notes |
-|-------|---------|-------|
-| **Phase 1** (0–3 years) | Government grant / Digital Identity program funding | Position as public infrastructure |
-| **Phase 2** (3–5 years) | Government operational funding + B2B API fees | Third parties pay per-verification (small fee, e.g., $0.05) |
-| **Phase 3** (5+ years) | Self-sustaining via B2B fees | Free for citizens forever; businesses pay for API access |
-
-Citizens **never pay**. This is a public utility.
-
-Third-party businesses pay a nominal per-verification fee — far cheaper than building their own ID verification, and they get reduced liability (they never hold PII).
-
----
-
-## 13. Legal & Compliance Considerations
+## 12. Legal & Compliance Considerations
 
 - **Privacy Act 1988 (AU)** — We collect minimal data; our architecture is Privacy by Design
 - **Trusted Digital Identity Framework (TDIF)** — Target TDIF accreditation
@@ -309,66 +266,3 @@ Third-party businesses pay a nominal per-verification fee — far cheaper than b
 - **GDPR (if expanding beyond AU)** — Zero-storage model is inherently GDPR-friendly
 - **Digital Identity Act 2024 (AU)** — Align with emerging digital identity legislation
 - **Open-source transparency** — Protocol and client code published for public audit
-
----
-
-## 14. Development Phases
-
-### Phase 0 — Foundation (Now)
-- [ ] Finalize protocol specification (this document → formal spec)
-- [ ] Define certificate format and crypto primitives
-- [ ] Prototype keypair generation and certificate signing
-- [ ] Build proof-of-concept enrollment flow (mock DVS)
-
-### Phase 1 — MVP
-- [ ] Backend API (enrollment + verification endpoints)
-- [ ] Crypto engine (keypair gen, signing, verification)
-- [ ] Encrypted store for public verification IDs
-- [ ] Basic PWA client (enrollment + certificate presentation)
-- [ ] Mock DVS integration (simulate government verification)
-
-### Phase 2 — Government Integration
-- [ ] Apply for DVS Access Provider status
-- [ ] Integrate with real DVS APIs
-- [ ] TDIF accreditation process
-- [ ] Security audit (independent third party)
-- [ ] Pen testing
-
-### Phase 3 — Public Beta
-- [ ] Public launch (AU citizens)
-- [ ] B2B API for third-party integrators
-- [ ] QR code / NFC presentation flow
-- [ ] Certificate management dashboard for citizens
-
-### Phase 4 — Scale
-- [ ] Multi-jurisdiction support (NZ, UK, EU)
-- [ ] Additional attribute types (professional licenses, certifications)
-- [ ] Decentralized verification option (blockchain-anchored certificate hashes)
-- [ ] Hardware key support (YubiKey, etc.)
-
----
-
-## 15. Open Questions
-
-1. **Key recovery** — If a user loses their private key and recovery method, how do we handle re-enrollment without creating a new identity? Can DVS approval be cached/referenced?
-2. **Certificate freshness** — How often should attributes be re-verified? License validity can change (suspended, expired).
-3. **Offline verification** — Can third parties verify certificates without hitting the API? (Yes, with embedded signatures, but revocation checks need connectivity.)
-4. **Anti-fraud** — How do we prevent one person enrolling multiple times to create multiple identities? (Likely: DVS deduplication.)
-5. **Accessibility** — How do we serve citizens without smartphones? (Physical card with embedded NFC + QR?)
-
----
-
-## 16. Summary — The Pitch
-
-> **"Prove who you are without giving yourself away."**
->
-> verify.id is a government-funded, zero-knowledge identity proxy. Verify once, prove forever — without handing your license to every app, bouncer, and landlord in the country.
->
-> We don't store your data. We can't leak what we don't have.
->
-> Your identity. Your control. Full stop.
-
----
-
-*Document version: 0.1.0 — Planning phase*
-*Last updated: 2026-04-03*
